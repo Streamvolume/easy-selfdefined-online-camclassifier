@@ -2,7 +2,7 @@
 
 基于迁移学习的浏览器端实时多目标识别工具。使用 MobileNet 提取图像特征，结合 KNN 分类器实现自定义类别的即时训练与检测，无需服务器，所有推理在本地浏览器完成。
 
-**[在线体验 →](https://你的用户名.github.io/custom-classifier/)**
+**[在线体验 →](https://streamvolume.github.io/easy-selfdefined-online-camclassifier/)**
 
 ![demo](https://img.shields.io/badge/TensorFlow.js-4.10-orange) ![demo](https://img.shields.io/badge/MobileNet-V2-blue) ![demo](https://img.shields.io/badge/license-MIT-green)
 
@@ -41,7 +41,7 @@ MobileNet 作为冻结的特征提取骨干网络，KNN 作为轻量下游分类
 
 ```bash
 # 克隆仓库
-git clone https://github.com/你的用户名/custom-classifier.git
+git clone https://github.com/Streamvolume/easy-selfdefined-online-camclassifier.git
 cd custom-classifier
 
 # 下载 JS 依赖库并启动本地服务器
