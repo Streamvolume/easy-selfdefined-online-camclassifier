@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>自定义类别识别器</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d14;color:#e8e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding-bottom:48px}
+#loading{position:fixed;inset:0;background:#0d0d14;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:999}
+#loading h2{font-size:18px;font-weight:500}
+.spinner{width:36px;height:36px;border:3px solid #222;border-top-color:#6366f1;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#load-step{font-size:13px;color:#666;max-width:300px;text-align:center;line-height:1.6}
+.topbar{width:100%;max-width:720px;padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #1a1a2a}
+.topbar-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+h1{font-size:15px;font-weight:600;white-space:nowrap}
+#model-select{flex:1;min-width:0;max-width:240px;padding:5px 8px;border-radius:7px;border:1px solid #2a2a4a;background:#111118;color:#818cf8;font-size:12px;cursor:pointer}
+#model-status{font-size:11px;padding:3px 9px;border-radius:8px;white-space:nowrap;border:1px solid #2d2d5a;background:#1a1a2e;color:#818cf8}
+#model-status.loading{color:#f59e0b;border-color:#78350f;background:#1c1206;animation:blink 1s infinite}
+#model-status.local{color:#22c55e;border-color:#14532d;background:#0a1f12}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.topbar-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tb{padding:5px 11px;border-radius:7px;border:1px solid #2a2a4a;background:#111118;color:#818cf8;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.tb:hover{background:#1a1a30;border-color:#4f46e5}
+.tb.green{color:#22c55e;border-color:#14532d;background:#0a1f12}
+.tb.red{color:#ef4444;border-color:#7f1d1d}
+.tb.red:hover{background:#2d1212}
+.tb:disabled{opacity:.35;cursor:not-allowed}
+#file-knn{display:none}
+#hint{width:100%;max-width:720px;padding:8px 14px;font-size:12px;line-height:1.6;display:none}
+#hint.ok{background:#0a1a0a;border-bottom:1px solid #14532d;color:#4ade80}
+#hint.err{background:#1a0a0a;border-bottom:1px solid #7f1d1d;color:#f87171}
+#hint code{padding:1px 5px;border-radius:4px;font-size:11px;background:#ffffff18}
+#cam-wrap{position:relative;width:100%;max-width:720px;background:#08080f}
+video{width:100%;display:block;max-height:340px;object-fit:cover}
+#cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#pred-bar{width:100%;max-width:720px;background:#111118;border-bottom:1px solid #1e1e2e;padding:10px 16px;min-height:50px;display:flex;align-items:center}
+#pred-label{font-size:21px;font-weight:600;color:#333;flex:1;transition:color .2s}
+#pred-conf{font-size:13px;color:#555}
+.cbar-wrap{width:100%;height:3px;background:#1e1e2e;border-radius:2px;margin-top:4px}
+.cbar{height:100%;border-radius:2px;transition:width .15s,background .15s}
+section{width:100%;max-width:720px;padding:14px 16px 0}
+section h2{font-size:11px;font-weight:500;color:#555;text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px}
+#grid{display:flex;flex-direction:column;gap:9px}
+.card{background:#111118;border:1px solid #1e1e2e;border-radius:11px;padding:11px 13px;transition:border-color .2s}
+.card.rec-on{border-color:#ef4444}
+.ctop{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.cdot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.cname{flex:1;background:transparent;border:none;color:#e8e8f0;font-size:14px;font-weight:500;outline:none}
+.cname::placeholder{color:#3a3a4a}
+.cbadge{font-size:11px;padding:2px 8px;border-radius:7px;background:#1a1a2e;color:#555;white-space:nowrap}
+.smb{padding:4px 9px;border-radius:6px;border:1px solid #1e1e2e;background:transparent;color:#444;font-size:11px;cursor:pointer}
+.smb:hover{color:#888}
+.delbtn{padding:4px 8px;border-radius:6px;border:1px solid #1e1e2e;background:transparent;color:#444;font-size:13px;cursor:pointer}
+.delbtn:hover{color:#ef4444;border-color:#7f1d1d}
+.tabs{display:flex;border:1px solid #1e1e2e;border-radius:7px;overflow:hidden;margin-bottom:9px}
+.tab{flex:1;padding:5px;font-size:12px;text-align:center;cursor:pointer;background:transparent;border:none;color:#555;transition:all .15s}
+.tab.on{background:#1e1e3a;color:#818cf8}
+.panel{display:none}
+.panel.on{display:block}
+.rec-btn{padding:7px 14px;border-radius:7px;border:1px solid #2d2d5a;background:#1a1a30;color:#818cf8;font-size:13px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.rec-btn.go{background:#7f1d1d;border-color:#ef4444;color:#fca5a5;animation:rp 1s infinite}
+@keyframes rp{0%,100%{opacity:1}50%{opacity:.65}}
+.dropzone{border:1.5px dashed #2a2a4a;border-radius:8px;padding:14px 10px;text-align:center;cursor:pointer;position:relative;transition:all .2s}
+.dropzone:hover,.dropzone.over{border-color:#4f46e5;background:#12122a}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dzlbl{font-size:13px;color:#555;pointer-events:none;line-height:1.6}
+.dzlbl b{color:#818cf8}
+.prog{margin-top:8px;display:none}
+.prog-bar{height:3px;background:#1e1e2e;border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;border-radius:2px;transition:width .1s}
+.prog-txt{font-size:11px;color:#555;margin-top:4px}
+.thumbs{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.thumb{width:38px;height:38px;border-radius:4px;object-fit:cover;border:1px solid #1e1e2e}
+.sbar{height:3px;background:#1e1e2e;border-radius:2px;overflow:hidden;margin-top:9px}
+.sfill{height:100%;border-radius:2px;transition:width .2s}
+.add-btn{width:100%;padding:9px;border-radius:9px;border:1.5px dashed #2a2a4a;background:transparent;color:#555;font-size:14px;cursor:pointer;margin-top:6px}
+.add-btn:hover{color:#888;border-color:#444}
+#train-wrap{width:100%;max-width:720px;padding:14px 16px 0}
+#train-btn{width:100%;padding:12px;border-radius:11px;border:none;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:15px;font-weight:500;cursor:pointer}
+#train-btn:disabled{opacity:.3;cursor:not-allowed}
+#train-info{margin-top:7px;font-size:12px;color:#555;text-align:center;min-height:18px}
+#note{margin:16px 16px 0;padding:13px;background:#0f0f1a;border:1px solid #1e1e2e;border-radius:10px;font-size:12px;color:#555;line-height:1.8;max-width:688px;width:calc(100% - 32px)}
+#note b{color:#818cf8}
+#note code{background:#1a1a2e;padding:1px 5px;border-radius:4px;color:#a5b4fc;font-size:11px}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><h2>正在加载</h2><p id="load-step">初始化...</p></div>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>识别器</h1>
+    <select id="model-select"></select>
+    <span id="model-status" class="loading">加载中</span>
+  </div>
+  <div class="topbar-right">
+    <button class="tb green" id="btn-save-model" disabled>保存模型到本地</button>
+    <button class="tb" id="btn-save-knn" disabled>保存 KNN</button>
+    <button class="tb" id="btn-load-knn">读取 KNN</button>
+    <input type="file" id="file-knn" accept=".json">
+    <button class="tb red" id="btn-reset">重置</button>
+  </div>
+</div>
+<div id="hint"></div>
+
+<div id="cam-wrap">
+  <video id="vid" autoplay playsinline muted></video>
+  <canvas id="cv"></canvas>
+  <canvas id="sel-cv" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;display:none"></canvas>
+</div>
+
+<div id="pred-bar">
+  <div style="flex:1">
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <span id="pred-label">训练后开始实时预测</span>
+      <span id="pred-conf"></span>
+    </div>
+    <div id="det-tags" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#555">置信度阈值</span>
+      <input type="range" id="conf-slider" min="20" max="90" value="55" style="width:80px;accent-color:#6366f1">
+      <span id="conf-val" style="font-size:11px;color:#888;min-width:28px">55%</span>
+      <span style="font-size:11px;color:#555;margin-left:8px">检测密度</span>
+      <input type="range" id="grid-slider" min="1" max="3" value="2" style="width:60px;accent-color:#6366f1">
+      <span id="grid-val" style="font-size:11px;color:#888">中</span>
+    </div>
+  </div>
+</div>
+
+<section>
+  <h2>第一步 — 定义类别并采集训练数据</h2>
+  <div id="grid"></div>
+  <button class="add-btn" id="btn-add">＋ 添加类别</button>
+</section>
+
+<div id="train-wrap">
+  <h2 style="font-size:11px;font-weight:500;color:#555;text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">第二步 — 训练分类器</h2>
+  <button id="train-btn" disabled>开始训练</button>
+  <div id="train-info">请先为至少 2 个类别采集样本</div>
+</div>
+
+<div id="note">
+  <b>模型本地化</b>：CDN 加载后点击「保存模型到本地」，将下载的 <code>model.json</code> +
+  <code>model.weights.bin</code> 放入 <code>models/&lt;模型名&gt;/</code> 目录，
+  重启服务器后自动离线加载（显示 ★本地）。<br>
+  <b>KNN 文件</b>：保存的 JSON 包含特征向量和类别名，切换模型后旧 KNN 文件不兼容。
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.4/dist/knn-classifier.min.js"></script>
+<script>
+'use strict';
+
+// ── 配置 ─────────────────────────────────────────────────────────────────────
+const MODELS = [
+  { key:'mobilenet_v2_1.0', label:'MobileNet V2 1.0', version:2, alpha:1.0,
+    cdnUrl:'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v2_1.00_224/model.json' },
+  { key:'mobilenet_v2_0.5', label:'MobileNet V2 0.5', version:2, alpha:0.5,
+    cdnUrl:'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v2_0.50_224/model.json' },
+  { key:'mobilenet_v1_1.0', label:'MobileNet V1 1.0', version:1, alpha:1.0,
+    cdnUrl:'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v1_1.00_224/model.json' },
+];
+const COLORS  = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+const MIN_N   = 5;
+const MAX_BAR = 80;
+const IS_LOCAL= ['localhost','127.0.0.1'].includes(location.hostname);
+
+// 检测窗口网格：[x1,y1,x2,y2]（归一化坐标）
+// 级别 1: 5窗口  2: 14窗口  3: 22窗口
+function buildGrid(level) {
+  const g = [];
+  g.push([0,0,1,1]); // 全图
+  // 2×2 大窗口（75%）
+  for (let r=0;r<2;r++) for (let c=0;c<2;c++) g.push([c*0.25,r*0.25,c*0.25+0.75,r*0.25+0.75]);
+  if (level < 2) return g; // 5 窗口
+  // 3×3 中窗口（50%）
+  for (let r=0;r<3;r++) for (let c=0;c<3;c++) g.push([c*0.25,r*0.25,c*0.25+0.5,r*0.25+0.5]);
+  if (level < 3) return g; // 14 窗口
+  // 4×2 窄高窗口（25%宽×75%高）
+  for (let c=0;c<4;c++) g.push([c*0.25,0,c*0.25+0.25,0.75]);
+  for (let r=0;r<4;r++) g.push([0,r*0.25,0.75,r*0.25+0.25]);
+  return g; // 22 窗口
+}
+
+let GRID = buildGrid(2);
+let CONF_THRESH = 0.55;
+
+let net=null, knn=null, curDef=null;
+let classes=[], uid=0, predLoop=null, predOn=false;
+let localSet=new Set();
+// 框选状态
+let selBox=null, selDrag=null, activeSelId=null;
+
+const $  = id=>document.getElementById(id);
+const vid=$('vid'), cv=$('cv'), ctx=cv.getContext('2d');
+const selCv=$('sel-cv'), selCtx=selCv.getContext('2d');
+
+// ── 滑块 ─────────────────────────────────────────────────────────────────────
+$('conf-slider').addEventListener('input', e=>{
+  CONF_THRESH = e.target.value/100;
+  $('conf-val').textContent = e.target.value+'%';
+});
+$('grid-slider').addEventListener('input', e=>{
+  const v=parseInt(e.target.value);
+  GRID = buildGrid(v);
+  $('grid-val').textContent = ['','少','中','多'][v];
+});
+
+// ── 初始化 ────────────────────────────────────────────────────────────────────
+async function init() {
+  step('初始化 TensorFlow.js...');
+  await tf.ready();
+  knn = knnClassifier.create();
+  if (IS_LOCAL) await detectLocal();
+  buildSel();
+  await loadNet(MODELS[0]);
+  $('loading').style.display = 'none';
+  await startCam();
+  addCard('类别 A'); addCard('类别 B');
+}
+
+async function detectLocal() {
+  await Promise.all(MODELS.map(async m=>{
+    try{ const r=await fetch(`/models/${m.key}/model.json`,{method:'HEAD'}); if(r.ok) localSet.add(m.key); }catch{}
+  }));
+}
+
+function buildSel() {
+  $('model-select').innerHTML = MODELS.map(m=>
+    `<option value="${m.key}">${m.label}${localSet.has(m.key)?' ★本地':''}</option>`
+  ).join('');
+}
+
+async function loadNet(def) {
+  curDef=def; net=null;
+  const st=$('model-status');
+  st.className='loading'; st.textContent='加载中...';
+  $('btn-save-model').disabled=true;
+  step(`加载 ${def.label}...`);
+  const url=(IS_LOCAL&&localSet.has(def.key))?`/models/${def.key}/model.json`:def.cdnUrl;
+  try {
+    net = await mobilenet.load({ version:def.version, alpha:def.alpha, modelUrl:url });
+    const isLoc=url.startsWith('/');
+    st.className=isLoc?'local':''; st.textContent=isLoc?'★ 本地':'CDN · 就绪';
+    if(!isLoc) $('btn-save-model').disabled=false;
+  } catch(e) {
+    st.className=''; st.textContent='加载失败';
+    hint('err',`模型加载失败：${e.message}`); console.error(e);
+  }
+}
+
+async function startCam() {
+  try {
+    const s=await navigator.mediaDevices.getUserMedia(
+      {video:{facingMode:{ideal:'environment'},width:{ideal:640},height:{ideal:480}}});
+    vid.srcObject=s;
+    await new Promise(r=>{vid.onloadedmetadata=r;});
+    cv.width=vid.videoWidth; cv.height=vid.videoHeight;
+    selCv.width=vid.videoWidth; selCv.height=vid.videoHeight;
+    bindSelCanvas();
+  } catch(e) { hint('err',`摄像头无法访问：${e.message}`); }
+}
+
+// ── 框选画布 ─────────────────────────────────────────────────────────────────
+function bindSelCanvas() {
+  function pos(e) {
+    const r=selCv.getBoundingClientRect();
+    const cx=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/r.width;
+    const cy=((e.touches?e.touches[0].clientY:e.clientY)-r.top)/r.height;
+    return {x:Math.max(0,Math.min(1,cx)), y:Math.max(0,Math.min(1,cy))};
+  }
+  const down=e=>{e.preventDefault(); selDrag=pos(e); selBox=null;};
+  const move=e=>{
+    if(!selDrag) return; e.preventDefault();
+    const p=pos(e);
+    selBox={x1:Math.min(selDrag.x,p.x),y1:Math.min(selDrag.y,p.y),
+            x2:Math.max(selDrag.x,p.x),y2:Math.max(selDrag.y,p.y)};
+    drawSelBox();
+  };
+  const up=()=>{selDrag=null;};
+  selCv.addEventListener('mousedown',down);
+  selCv.addEventListener('touchstart',down,{passive:false});
+  selCv.addEventListener('mousemove',move);
+  selCv.addEventListener('touchmove',move,{passive:false});
+  selCv.addEventListener('mouseup',up);
+  selCv.addEventListener('touchend',up);
+}
+
+function drawSelBox() {
+  selCtx.clearRect(0,0,selCv.width,selCv.height);
+  if(!selBox) return;
+  const {x1,y1,x2,y2}=selBox;
+  const W=selCv.width, H=selCv.height;
+  selCtx.strokeStyle='#fff'; selCtx.lineWidth=2;
+  selCtx.setLineDash([5,3]);
+  selCtx.strokeRect(x1*W,y1*H,(x2-x1)*W,(y2-y1)*H);
+  selCtx.setLineDash([]);
+  selCtx.fillStyle='rgba(255,255,255,0.08)';
+  selCtx.fillRect(x1*W,y1*H,(x2-x1)*W,(y2-y1)*H);
+}
+
+// ── 特征提取（支持裁剪区域）──────────────────────────────────────────────────
+function extractFeat(region) {
+  // region: null → 全图；{x1r,y1r,x2r,y2r} → 裁剪
+  return tf.tidy(()=>{
+    const frame=tf.browser.fromPixels(vid);
+    if(!region) return net.infer(frame,true);
+    const H=frame.shape[0], W=frame.shape[1];
+    const y1=Math.floor(region.y1*H), x1=Math.floor(region.x1*W);
+    const h=Math.max(1,Math.floor((region.y2-region.y1)*H));
+    const w=Math.max(1,Math.floor((region.x2-region.x1)*W));
+    const crop=frame.slice([y1,x1,0],[h,w,3]);
+    return net.infer(crop,true);
+  });
+}
+
+// ── 帧采集（全图）────────────────────────────────────────────────────────────
+async function captureFrame(classId, region=null) {
+  if(!net||!vid.videoWidth) return;
+  let feat;
+  try {
+    feat=extractFeat(region);
+    knn.addExample(feat,classId);
+    updateN(classId,knn.getClassExampleCount()[classId]||0);
+  } catch(e){console.error('capture:',e);}
+  finally{if(feat)feat.dispose();}
+}
+
+// ── 多目标检测（滑动窗口 + NMS）─────────────────────────────────────────────
+function iou([ax1,ay1,ax2,ay2],[bx1,by1,bx2,by2]) {
+  const ix1=Math.max(ax1,bx1),iy1=Math.max(ay1,by1);
+  const ix2=Math.min(ax2,bx2),iy2=Math.min(ay2,by2);
+  const inter=Math.max(0,ix2-ix1)*Math.max(0,iy2-iy1);
+  const aA=(ax2-ax1)*(ay2-ay1), bA=(bx2-bx1)*(by2-by1);
+  return inter/(aA+bA-inter+1e-6);
+}
+
+function nms(dets, iouThr=0.45) {
+  const sorted=[...dets].sort((a,b)=>b.conf-a.conf);
+  const used=new Set(), keep=[];
+  for(let i=0;i<sorted.length;i++) {
+    if(used.has(i)) continue;
+    keep.push(sorted[i]);
+    for(let j=i+1;j<sorted.length;j++) {
+      if(used.has(j)) continue;
+      if(sorted[i].classId===sorted[j].classId && iou(sorted[i].box,sorted[j].box)>iouThr)
+        used.add(j);
+    }
+  }
+  return keep;
+}
+
+async function detectMulti() {
+  if(!net||vid.readyState!==4||knn.getNumClasses()===0) return [];
+  const raw=[];
+  for(const [x1r,y1r,x2r,y2r] of GRID) {
+    let feat;
+    try {
+      feat=extractFeat({x1:x1r,y1:y1r,x2:x2r,y2:y2r});
+      const pred=await knn.predictClass(feat,3);
+      const conf=pred.confidences[pred.label]||0;
+      if(conf>=CONF_THRESH)
+        raw.push({box:[x1r,y1r,x2r,y2r],classId:parseInt(pred.label),
+                  label:getName(parseInt(pred.label)),conf});
+    } catch(e){console.error(e);}
+    finally{if(feat)feat.dispose();}
+  }
+  return nms(raw);
+}
+
+// ── 绘制多目标框 ──────────────────────────────────────────────────────────────
+function drawBoxes(dets) {
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const W=cv.width, H=cv.height;
+  dets.forEach(({box:[x1r,y1r,x2r,y2r],label,conf,classId})=>{
+    const x=x1r*W, y=y1r*H, w=(x2r-x1r)*W, h=(y2r-y1r)*H;
+    const c=classes.find(cl=>cl.id===classId);
+    const color=c?c.color:'#818cf8';
+    // 框
+    ctx.strokeStyle=color; ctx.lineWidth=2.5;
+    ctx.shadowColor=color; ctx.shadowBlur=6;
+    ctx.strokeRect(x,y,w,h); ctx.shadowBlur=0;
+    // 标签背景
+    const txt=`${label} ${Math.round(conf*100)}%`;
+    ctx.font='600 13px -apple-system,sans-serif';
+    const tw=ctx.measureText(txt).width;
+    const ly=y>22?y-22:y+h+2;
+    ctx.fillStyle=color+'ee'; ctx.fillRect(x,ly,tw+10,20);
+    ctx.fillStyle='#fff'; ctx.fillText(txt,x+5,ly+14);
+  });
+}
+
+// ── 更新检测标签条 ────────────────────────────────────────────────────────────
+function updateDetTags(dets) {
+  const tags=$('det-tags');
+  if(!dets.length){tags.innerHTML='';return;}
+  const counts={};
+  dets.forEach(d=>{
+    if(!counts[d.classId]) counts[d.classId]={label:d.label,count:0,maxConf:0,color:(classes.find(c=>c.id===d.classId)||{}).color||'#818cf8'};
+    counts[d.classId].count++;
+    counts[d.classId].maxConf=Math.max(counts[d.classId].maxConf,d.conf);
+  });
+  tags.innerHTML=Object.values(counts).map(({label,count,maxConf,color})=>
+    `<span style="font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid ${color}44;background:${color}22;color:${color}">
+      ${label}${count>1?` ×${count}`:''}
+      <span style="opacity:.7;font-size:11px"> ${Math.round(maxConf*100)}%</span>
+    </span>`
+  ).join('');
+}
+
+// ── 预测循环 ─────────────────────────────────────────────────────────────────
+function startPred() {
+  predOn=true;
+  (async function loop(){
+    if(!predOn) return;
+    const dets=await detectMulti();
+    drawBoxes(dets);
+    updateDetTags(dets);
+    if(dets.length>0) {
+      $('pred-label').textContent=dets[0].label;
+      $('pred-label').style.color=(classes.find(c=>c.id===dets[0].classId)||{}).color||'#818cf8';
+      $('pred-conf').textContent=Math.round(dets[0].conf*100)+'%';
+    } else {
+      $('pred-label').textContent='未检测到物体'; $('pred-label').style.color='#555'; $('pred-conf').textContent='';
+    }
+    predLoop=requestAnimationFrame(loop);
+  })();
+}
+
+function stopPred() {
+  predOn=false; if(predLoop) cancelAnimationFrame(predLoop);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  $('pred-label').textContent='训练后开始实时预测'; $('pred-label').style.color='#333';
+  $('pred-conf').textContent=''; $('det-tags').innerHTML='';
+}
+
+// ── 图片上传 ─────────────────────────────────────────────────────────────────
+async function handleFiles(classId,files) {
+  if(!net){hint('err','模型未就绪');return;}
+  const arr=Array.from(files||[]).filter(f=>f.type.startsWith('image/'));
+  if(!arr.length) return;
+  const prog=$(`prog-${classId}`),pfill=$(`pfill-${classId}`),ptxt=$(`ptxt-${classId}`),thEl=$(`thumbs-${classId}`);
+  prog.style.display='block'; let ok=0;
+  for(let i=0;i<arr.length;i++){
+    ptxt.textContent=`处理 ${i+1}/${arr.length}...`; pfill.style.width=(i/arr.length*100)+'%';
+    await new Promise(done=>{
+      const fr=new FileReader(); fr.onerror=()=>done();
+      fr.onload=ev=>{
+        const img=new Image(); img.onerror=()=>done();
+        img.onload=()=>{
+          let feat;
+          try{
+            feat=tf.tidy(()=>{ const t=tf.browser.fromPixels(img); return net.infer(t,true); });
+            knn.addExample(feat,classId); ok++;
+            const th=document.createElement('img'); th.src=ev.target.result; th.className='thumb'; thEl.appendChild(th);
+            updateN(classId,knn.getClassExampleCount()[classId]||0);
+          }catch(e){console.error(e);}
+          finally{if(feat)feat.dispose(); done();}
+        };
+        img.src=ev.target.result;
+      };
+      fr.readAsDataURL(arr[i]);
+    });
+  }
+  pfill.style.width='100%'; ptxt.textContent=`✓ ${ok}/${arr.length} 张`; checkReady();
+}
+
+// ── 类别卡片 ─────────────────────────────────────────────────────────────────
+function addCard(name='') {
+  const id=uid++, color=COLORS[id%COLORS.length];
+  classes.push({id,color});
+  const d=document.createElement('div'); d.className='card'; d.id=`card-${id}`;
+  d.innerHTML=`
+<div class="ctop">
+  <div class="cdot" style="background:${color}"></div>
+  <input class="cname" placeholder="类别名称..." value="${name}" data-id="${id}">
+  <span class="cbadge" id="badge-${id}">0 样本</span>
+  <button class="smb clr" data-id="${id}">清除</button>
+  <button class="delbtn del" data-id="${id}">✕</button>
+</div>
+<div class="tabs">
+  <button class="tab on" data-src="cam">摄像头采集</button>
+  <button class="tab"    data-src="sel">框选采集</button>
+  <button class="tab"    data-src="up">上传照片</button>
+</div>
+<div class="panel on" id="cam-${id}">
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="rec-btn" id="rec-${id}">按住采集</button>
+    <span style="font-size:12px;color:#555">每 150ms 整帧送入模型</span>
+  </div>
+</div>
+<div class="panel" id="sel-${id}">
+  <div style="font-size:12px;color:#555;margin-bottom:6px">在画面上拖拽划定区域，仅框内送入模型（适合多目标场景）</div>
+  <button class="rec-btn" id="sel-rec-${id}">按住框内采集</button>
+</div>
+<div class="panel" id="up-${id}">
+  <div class="dropzone" id="dz-${id}">
+    <input type="file" accept="image/*" multiple id="fi-${id}">
+    <div class="dzlbl"><b>点击选择</b>或拖拽图片<br><span style="font-size:11px">JPG/PNG/WEBP，可多选</span></div>
+  </div>
+  <div class="prog" id="prog-${id}">
+    <div class="prog-bar"><div class="prog-fill" id="pfill-${id}" style="background:${color};width:0%"></div></div>
+    <div class="prog-txt" id="ptxt-${id}"></div>
+  </div>
+  <div class="thumbs" id="thumbs-${id}"></div>
+</div>
+<div class="sbar"><div class="sfill" id="sfill-${id}" style="background:${color};width:0%"></div></div>`;
+  $('grid').appendChild(d);
+
+  // Tab 切换
+  d.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    d.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
+    const src=t.dataset.src;
+    $(`cam-${id}`).classList.toggle('on',src==='cam');
+    $(`sel-${id}`).classList.toggle('on',src==='sel');
+    $(`up-${id}`) .classList.toggle('on',src==='up');
+    // 框选模式时显示选框画布
+    selCv.style.display=(src==='sel')?'block':'none';
+    if(src==='sel') activeSelId=id; else if(activeSelId===id) activeSelId=null;
+  }));
+
+  // 整帧采集
+  const rb=$(`rec-${id}`); let iv=null;
+  const go=()=>{rb.classList.add('go');rb.textContent='● 采集中...';d.classList.add('rec-on');captureFrame(id);iv=setInterval(()=>captureFrame(id),150);};
+  const stop=()=>{rb.classList.remove('go');rb.textContent='按住采集';d.classList.remove('rec-on');clearInterval(iv);checkReady();};
+  rb.addEventListener('mousedown',go); rb.addEventListener('touchstart',e=>{e.preventDefault();go();},{passive:false});
+  rb.addEventListener('mouseup',stop); rb.addEventListener('mouseleave',stop); rb.addEventListener('touchend',stop);
+
+  // 框选采集
+  const sr=$(`sel-rec-${id}`); let siv=null;
+  const sgo=()=>{
+    sr.classList.add('go');sr.textContent='● 框选采集中...';d.classList.add('rec-on');
+    captureFrame(id,selBox?{x1:selBox.x1,y1:selBox.y1,x2:selBox.x2,y2:selBox.y2}:null);
+    siv=setInterval(()=>captureFrame(id,selBox?{x1:selBox.x1,y1:selBox.y1,x2:selBox.x2,y2:selBox.y2}:null),150);
+  };
+  const sstop=()=>{sr.classList.remove('go');sr.textContent='按住框内采集';d.classList.remove('rec-on');clearInterval(siv);checkReady();};
+  sr.addEventListener('mousedown',sgo); sr.addEventListener('touchstart',e=>{e.preventDefault();sgo();},{passive:false});
+  sr.addEventListener('mouseup',sstop); sr.addEventListener('mouseleave',sstop); sr.addEventListener('touchend',sstop);
+
+  // 上传
+  const fi=$(`fi-${id}`);
+  fi.addEventListener('change',()=>{handleFiles(id,fi.files);fi.value='';});
+  const dz=$(`dz-${id}`);
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
+  dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');handleFiles(id,e.dataTransfer.files);});
+
+  // 清除 / 删除
+  d.querySelector('.clr').addEventListener('click',()=>{knn.clearClass(id);updateN(id,0);$(`thumbs-${id}`).innerHTML='';$(`prog-${id}`).style.display='none';checkReady();});
+  d.querySelector('.del').addEventListener('click',()=>{if(classes.length<=2){alert('至少保留 2 个类别');return;}knn.clearClass(id);classes=classes.filter(c=>c.id!==id);d.remove();checkReady();});
+}
+
+function updateN(id,n){
+  const b=$(`badge-${id}`);if(b)b.textContent=n+' 样本';
+  const f=$(`sfill-${id}`);if(f)f.style.width=Math.min(100,n/MAX_BAR*100)+'%';
+}
+function checkReady(){
+  const cnts=knn.getClassExampleCount(), ok=classes.filter(c=>(cnts[c.id]||0)>=MIN_N);
+  $('train-btn').disabled=ok.length<2;
+  $('train-info').textContent=ok.length>=2?`✓ ${ok.length} 个类别满足要求（≥${MIN_N} 样本）`:`还需 ${2-ok.length} 个类别达到 ${MIN_N}+ 样本`;
+}
+
+// ── 模型切换 ─────────────────────────────────────────────────────────────────
+$('model-select').addEventListener('change',async()=>{
+  const def=MODELS.find(m=>m.key===$('model-select').value);
+  if(!def||def.key===curDef?.key) return;
+  const hasSamp=Object.values(knn.getClassExampleCount()).some(n=>n>0);
+  if(hasSamp&&!confirm('切换模型会清空已采集样本，确定？')){$('model-select').value=curDef.key;return;}
+  stopPred(); knn.clearAllClasses(); classes.forEach(c=>updateN(c.id,0));
+  $('train-btn').disabled=true;$('train-btn').textContent='开始训练';$('btn-save-knn').disabled=true;
+  await loadNet(def); checkReady();
+});
+
+// ── 训练 ─────────────────────────────────────────────────────────────────────
+$('train-btn').addEventListener('click',()=>{
+  $('train-btn').disabled=true;$('train-btn').textContent='✓ 实时识别中';
+  $('train-info').textContent='滑动窗口多目标检测运行中';$('btn-save-knn').disabled=false;
+  startPred();
+});
+
+// ── 保存模型 ─────────────────────────────────────────────────────────────────
+$('btn-save-model').addEventListener('click',async()=>{
+  if(!net) return; const btn=$('btn-save-model'); btn.disabled=true; btn.textContent='保存中...';
+  try{
+    await net.model.save('downloads://model');
+    hint('ok',`✓ 已下载 <code>model.json</code> + <code>model.weights.bin</code>，放入 <code>models/${curDef.key}/</code> 目录后重启服务器可离线加载。`);
+    btn.textContent='✓ 已下载';
+  }catch(e){hint('err','保存失败：'+e.message);btn.disabled=false;btn.textContent='保存模型到本地';}
+});
+
+// ── 保存 / 读取 KNN ───────────────────────────────────────────────────────────
+$('btn-save-knn').addEventListener('click',async()=>{
+  if(!knn||knn.getNumClasses()===0) return;
+  const ds=knn.getClassifierDataset(),kd={};
+  for(const [id,t] of Object.entries(ds)) kd[id]={data:Array.from(await t.data()),shape:t.shape};
+  const blob=new Blob([JSON.stringify({version:1,modelKey:curDef?.key,savedAt:new Date().toISOString(),
+    classes:classes.map(c=>({id:c.id,name:getName(c.id)})),knnData:kd},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`knn-${curDef?.key}-${Date.now()}.json`;a.click();
+});
+
+$('btn-load-knn').addEventListener('click',()=>$('file-knn').click());
+$('file-knn').addEventListener('change',async function(){
+  const file=this.files[0];this.value='';if(!file) return;
+  let saved;try{saved=JSON.parse(await file.text());}catch{alert('解析失败');return;}
+  if(saved.modelKey&&saved.modelKey!==curDef?.key){
+    const def=MODELS.find(m=>m.key===saved.modelKey);
+    if(!def){alert(`找不到模型 "${saved.modelKey}"`);return;}
+    if(!confirm(`需切换到 "${saved.modelKey}"，继续？`)) return;
+    stopPred();knn.clearAllClasses();classes.forEach(c=>updateN(c.id,0));
+    $('model-select').value=def.key;await loadNet(def);
+  }
+  $('grid').innerHTML='';classes=[];uid=0;
+  (saved.classes||[]).forEach(c=>addCard(c.name));
+  if(classes.length<2){addCard('类别 A');addCard('类别 B');}
+  knn.clearAllClasses();
+  const ds={};
+  for(const [id,info] of Object.entries(saved.knnData)) ds[id]=tf.tensor(info.data,info.shape);
+  knn.setClassifierDataset(ds);
+  const cnts=knn.getClassExampleCount();classes.forEach(c=>updateN(c.id,cnts[c.id]||0));
+  $('train-btn').disabled=true;$('train-btn').textContent='✓ 实时识别中';
+  $('train-info').textContent=`已恢复 ${saved.classes?.length||'?'} 个类别`;
+  $('btn-save-knn').disabled=false;checkReady();startPred();
+});
+
+// ── 重置 ─────────────────────────────────────────────────────────────────────
+$('btn-reset').addEventListener('click',()=>{
+  if(!confirm('清空所有类别和训练数据？')) return;
+  stopPred();knn.clearAllClasses();$('grid').innerHTML='';classes=[];uid=0;
+  addCard('类别 A');addCard('类别 B');
+  $('train-btn').disabled=true;$('train-btn').textContent='开始训练';
+  $('train-info').textContent='请先为至少 2 个类别采集样本';
+  $('btn-save-knn').disabled=true;$('hint').style.display='none';
+  selCv.style.display='none';selBox=null;selCtx.clearRect(0,0,selCv.width,selCv.height);
+  checkReady();
+});
+
+$('btn-add').addEventListener('click',()=>{if(classes.length>=8){alert('最多 8 个类别');return;}addCard();});
+function getName(id){const el=document.querySelector(`.cname[data-id="${id}"]`);return(el&&el.value.trim())||'类别'+id;}
+function step(msg){$('load-step').textContent=msg;}
+function hint(type,html){const el=$('hint');el.className=type;el.innerHTML=html;el.style.display='block';}
+
+init().catch(e=>{step('初始化失败：'+e.message);console.error(e);});
+</script>
+</body>
+</html>
