@@ -215,7 +215,7 @@ async function init() {
   step('初始化 TensorFlow.js...');
   await tf.ready();
   knn = knnClassifier.create();
-  if (IS_LOCAL) await detectLocal();
+  await detectLocal();
   buildSel();
   await loadNet(MODELS[0]);
   $('loading').style.display = 'none';
@@ -225,7 +225,7 @@ async function init() {
 
 async function detectLocal() {
   await Promise.all(MODELS.map(async m=>{
-    try{ const r=await fetch(`/models/${m.key}/model.json`,{method:'HEAD'}); if(r.ok) localSet.add(m.key); }catch{}
+    try{ const r=await fetch(`./models/${m.key}/model.json`,{method:'HEAD'}); if(r.ok) localSet.add(m.key); }catch{}
   }));
 }
 
@@ -241,7 +241,7 @@ async function loadNet(def) {
   st.className='loading'; st.textContent='加载中...';
   $('btn-save-model').disabled=true;
   step(`加载 ${def.label}...`);
-  const url=(IS_LOCAL&&localSet.has(def.key))?`/models/${def.key}/model.json`:def.cdnUrl;
+  const url=localSet.has(def.key)?`./models/${def.key}/model.json`:def.cdnUrl;
   try {
     net = await mobilenet.load({ version:def.version, alpha:def.alpha, modelUrl:url });
     const isLoc=url.startsWith('/');
