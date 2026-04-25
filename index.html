@@ -217,7 +217,7 @@ async function init() {
   step('初始化 TensorFlow.js...');
   await tf.ready();
   knn = knnClassifier.create();
-  await detectLocal();
+  if (IS_LOCAL) await detectLocal();
   buildSel();
   await loadNet(MODELS[0]);
   $('loading').style.display = 'none';
